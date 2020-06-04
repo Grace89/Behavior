@@ -1,0 +1,821 @@
+---
+title: "ANTI-FUNGAL TREATMENT RESULTS IN LITTLE TO NO SHORT-TERM SIDE EFFECTS ON HOST PERFORMANCE, FITNESS, AND BEHAVIOR"
+author: "G. V. DiRenzo"
+date: "5/2/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Load libraries
+library(lme4)
+```
+
+
+# Reading in and formatting the data
+
+```{r}
+# set working directory
+setwd("~/Dropbox/Active manuscripts/Needs Work/Behavior/")
+
+# Read in the jumping data
+dat1 <- read.csv("./Data/Jumping/distancejumps_GVD_23_March_2018.csv")
+
+# Look at structure of data
+  # 398 observations of 12 variables
+str(dat1)
+  # $ID_Number = individual id number of the frog
+  # $Distance_1_mm = distance of 1st jump in mm
+  # $Distance_2_mm = distance of 2nd jump in mm
+  # $Total = sum of 1st and 2nd jump
+  # $Day = Day of jumping trial
+  # $Mo = month (numerical) of jumping trial
+  # $Month = month (name) of jumping trial
+  # $Year = year of jumping trial
+  # $Average_Total_Distance_mm = average distance jumped from 2 consecutive jumps
+  # $Exp_Day = experimental day of jumping trial
+  # $Jump_time = when the jumping trial took place - first, middle, or last 
+  # $Bd_load = Bd load of amphibian during jumping trial
+
+# Convert both of the Distance columns to numeric
+dat1$Distance_1_mm <- as.numeric(as.character(dat1$Distance_1_mm))
+dat1$Distance_2_mm <- as.numeric(as.character(dat1$Distance_2_mm))
+
+# read in treatment groups
+dat2 <- read.csv("./Data/Treatments/FINAL TREATMENTS/treatments_long_format.csv")
+
+# Treatment information for frogs 
+str(dat2)
+# 115 obs. of  5 variables:
+ #$ ID_Number = individual id number of the frog
+ #$ Treatment = Treatment
+ #$ Infection = Infected or Uninfected
+ #$ New_treatment = Summary treatment
+ #$ Group = Not applicable
+
+
+# Merge the 2 data files by ID_Number
+dat <- merge(dat1, dat2, by= "ID_Number")
+
+# Look at the new data frame
+str(dat)
+
+# Convert ID Number to a factor (like names)- it is not a continuous variable
+dat$ID_Number <- as.factor(dat$ID_Number)
+
+# Average jump between the 2 jumps
+dat$Two_jump_average <- apply(cbind(dat$Distance_1_mm, dat$Distance_2_mm), 1, mean, na.rm = TRUE)
+
+# Remove any treatment with the work "Pre" in it
+dat <- dat[-c(grep("Pre-", dat$Treatment)),]
+
+# Drop the levels
+dat <- droplevels(dat)
+
+# Look at data structure
+str(dat)
+
+# Create the table of sample sizes
+library(plyr)
+ddply(.data = dat, .variable = "Treatment", .fun = summarize,
+      sample_size = length(unique(ID_Number)))
+```
+
+#  Appendix S1. Host performance
+
+## (1) LMM: total jumping distance ~ treatment*experimental day + (1| ID number)
+
+```{r}
+# We will be analyzing the jumping trials
+# We will compare the pre-jumping distance (i.e., pre infection, pre antifungal application) to the post-jumping distance (i.e., post infection, post antifungal application)
+
+# Remove experimental days 26 and 40 (We conducted jumping trials on these days that are not analyzed here)
+jump <- dat[-c(dat$Exp_Day == 26 | dat$Exp_Day == 40),]
+
+# Create an empty column
+jump$time <- NA
+
+# If experimentdal day is less than 40- give it the name "Pre", else give it the name "Post"
+jump$time <- ifelse(jump$Exp_Day < 40, "Pre", "Post")
+
+# Make the column into a factor with 2 levels
+jump$time <- factor(jump$time, levels = c("Pre", "Post"))
+
+# Analyze the total jumping distance (response variable) with time * treatment interaction as fixed effects and individual ID as the random effect
+mod <- lmer(Total ~ time*Treatment + (1|ID_Number), data = jump)
+
+# Look at model summary
+summary(mod)
+
+#---- Post-hoc analysis- Look at pairwise differences
+# Load the library
+library("emmeans")
+
+# Visualize the interaction
+# Appendix S1 (B)
+emmip(mod, Treatment ~ time, ylab = "Total jumping distance (mm)", xlab = "Time")
+
+# save the plot
+library(ggplot2)
+ggsave("jumping.pdf", height = 5, width = 5)
+
+# Compare the total jumping distance between "Pre" and "Post" for each treatment
+post_hoc <- emmeans(mod, "time", by = "Treatment")
+
+# Calculate p-values for each pair
+pairs(post_hoc)
+```
+
+```{r}
+
+####-------- Make the plot: Figure 2
+# Load the libraries
+library(ggplot2)
+library(plyr)
+
+mat4 <- ddply(.data = jump, .variable = c("Treatment", "time"), .fun = summarize, 
+              mean = mean(Total), 
+              upper = mean(Total) +(sd(Total)/sqrt(length(Total))),
+              lower = mean(Total) -(sd(Total)/sqrt(length(Total))))
+
+ggplot(data = mat4, aes(y = mean, x = Treatment, fill = time)) + 
+    geom_bar(stat="identity", color="black", position=position_dodge()) +
+  scale_fill_manual(values = c("gray47", "goldenrod"))+
+    geom_errorbar(aes(ymin=lower, ymax=upper), width=.2, position=position_dodge(.9)) +
+    theme_bw()+ 
+  ylab("Total distance jumped (mm)")+
+  xlab("Treatment")+
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        axis.text.y=element_text(size=12),
+        axis.title.y=element_text(size=12),
+        axis.text.x=element_text(size=12),
+        axis.title.x=element_text(size=12))+
+  labs(fill = "Time") +
+  annotate("text", x = 3, y = 200, label = "*", size = 10)
+
+ggsave("Jumping bar.pdf", height = 5, width = 8)
+```
+
+## (II) LMM: total jumping distance ~ log10(Bd load + 1)* treatment + experimental day + (1| ID number)
+ 
+```{r}
+
+# Read in the jumping data
+dat1 <- read.csv("~/Dropbox/Active manuscripts/Needs Work/Behavior/Data/Jumping/distancejumps_GVD_23_March_2018.csv")
+
+# Look at the data structure
+str(dat1)
+# Similar as above - # 398 obs.
+
+# Read in treatment groups
+dat2 <- read.csv("~/Dropbox/Active manuscripts/Needs Work/Behavior/Data/Treatments/FINAL TREATMENTS/treatments_long_format.csv")
+
+# look at data structure
+str(dat2)
+# Similar as above - # 115 obs.
+
+# Merge the 2 data files
+dat <- merge(dat1, dat2, all = TRUE)
+
+# Look at data structure
+str(dat)
+# 398 obs
+
+# Remove pre group- Not used for this paper
+dat <- dat[-c(grep("Pre-", dat$Treatment)),]
+# 324 obs.
+
+# Drop any unsed levels in the factor
+dat <- droplevels(dat)
+
+# Look at the data structure 
+str(dat)
+# 324 obs
+
+# Keep only infected groups
+# dat <- dat[dat$Infection == "Infected",]
+
+# Convert ID Number to a factor (like names)- it is not a continuous variable
+dat$ID_Number <- as.factor(dat$ID_Number)
+
+# Remove any individuals with no Bd load
+dat <- dat[is.na(dat$Bd_load) == FALSE,]
+
+# Drop any unused levels
+dat <- droplevels(dat)
+
+# Look at data structure
+str(dat)
+# 79 obs
+
+# Make a new column with Bd load log transformed
+dat$log10Bd <- log10(dat$Bd+1)
+
+# Load the library
+library(ggplot2)
+
+# Create a color ramp
+cbbPalette <- c("black", "deepskyblue3", "goldenrod3")
+
+# Make a plot
+  # Total jumping distance = y-axis
+  # log10 Bd load = x-axis
+  # Treatments = colors
+ggplot(data = dat, aes(y = Total, x = log10Bd, col = Treatment))+ 
+  geom_jitter(height = 1, width = 1) + 
+  scale_color_manual(values = cbbPalette)+
+  ylab("Total jumping distance (mm)") + 
+  xlab(expression(paste(log[10], "(", italic(Bd), " load + 1)")))+ 
+  theme_bw()+
+  theme(
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), 
+    axis.text.y=element_text(size=14),
+    axis.title.y=element_text(size=14),
+    axis.text.x=element_text(size=14),
+    axis.title.x=element_text(size=14))+
+  stat_smooth(method = "lm", se = TRUE, size =1.5)
+  
+ggsave("Jumping distance v Bd load.pdf", height = 5, width = 7)
+
+# load libraries
+library(lme4)
+library(nlme)
+library("emmeans")
+
+# Used generalized linear mixed effect model with log10(Bd+1) load as the response variable and 
+mod <- lme(Total ~  log10Bd * (Treatment-1) + Exp_Day, random = ~1|ID_Number, data = dat)
+
+# Look at summary
+summary(mod)
+  # log10Bd is not significant
+  # Next, we will test to see if the slopes for each treatment are different
+  # And we will test to see if the intercepts are different among treatments
+
+# Interaction plot
+emmip(mod, Treatment ~ log10Bd, cov.reduce = range,
+      xlab = "log10(Bd load + 1)", ylab = "Total jumping distance (mm)") +
+  scale_x_discrete(labels = c(0, 6))
+
+ggsave("Jumping distance Bd load interaction plot.pdf", height = 5, width = 7)
+  
+
+#---- Look at pairwise differences in slope estimates among treatments
+lst <- emtrends(mod, ~ Treatment, var = "log10Bd")
+multcomp::cld(lst)
+# Interaction is not significant
+
+
+# Compare the intercept for total jumping distance between treatments
+post_hoc <- emmeans(mod, "Treatment")
+
+# Calculate p-values for each pair
+pairs(post_hoc)
+# Intercept not significantly different between pairs of treatments
+
+```
+
+
+# Appendix S2. Host fitness 
+
+## (I) LMM: weight ~ treatment*experimental day + (1| ID number)
+
+```{r}
+# Influence of treatment on growth
+growth <- read.csv("~/Dropbox/Active manuscripts/Needs Work/Behavior/Data/Arrival_day/Arrival_day_measurements.csv")
+
+# Look at data
+str(growth)
+#   # 'data.frame':	874 obs. of  13 variables:
+#  $ Month = Month of measurement
+#  $ Day  = Day of measurement
+#  $ Year = Year of measurement
+#  $ ID_Number  = ID number of individual
+#  $ Weight_g  = weight in grams of individual
+#  $ SVL_mm  = snout to vent length of individual
+#  $ Swab_ID  = Swab ID of sample collected
+#  $ Sprayed_YN  = Was the individual sprayed with water?
+#  $ Fell_On_Floor_YN  = Did the individual fall on the floor?
+#  $ Feed_YN  = Was the individual fed?
+#  $ Amount_of_fruit_flies_fed = The number of fruit flies added to the cage
+#  $ Notes = any other notes
+#  $ Exp_Day = experimental day
+
+# Download treatment data
+treatments <- read.csv("~/Dropbox/Active manuscripts/Needs Work/Behavior/Data/Treatments/FINAL TREATMENTS/treatments_long_format.csv")
+
+# Same file as before with the treatment information
+
+# Convert ID number to factor- used as a name- not continuous variable
+treatments$ID_Number <- as.factor(treatments$ID_Number)
+
+# Merge the matrix with the treatments
+mat <- merge(growth, treatments, all = TRUE)
+
+# Look at the merged file structure
+str(mat)
+
+# Remove any treatments with the word "pre"
+mat <- mat[-c(grep("Pre-", mat$Treatment)),]
+
+# Drop any unused levels
+mat <- droplevels(mat)
+
+# Convert ID number to factor- used as a name- not continuous variable
+mat$ID_Number <- as.factor(mat$ID_Number)
+
+## Analyze the frog's weight (response variable) with experimental day * treatment interaction as fixed effects and individual ID as the random effect
+mod <- lmer(Weight_g ~ Treatment*Exp_Day + (1|ID_Number), data = mat)
+
+# Look at summary of the model
+summary(mod)
+```
+
+```{r}
+
+#---- Look at pairwise differences
+# load the library
+library("emmeans")
+
+
+# Visualize the interaction
+# Appendix S2 (B)
+emmip(mod, Treatment ~ Exp_Day, ylab = "Weight (g)", xlab = "Experimental day", cov.reduce = FALSE)
+
+# save the plot
+library(ggplot2)
+ggsave("weight- emmip.pdf", height = 5, width = 8)
+
+
+# Here, we are interested in determining if the slope (change in weight over time estimate) differs among treatments
+lst <- emtrends(mod, ~ Treatment, var = "Exp_Day")
+
+multcomp::cld(lst)
+```
+
+
+```{r}
+
+mat <- mat[is.na(mat$Treatment) == FALSE,]
+
+# Drop unused levels
+mat <- droplevels(mat)
+
+# Put the treatments in the order you want them to appear in the plot
+mat$Treatment <- factor(mat$Treatment, levels = c("Bd", "Bd+BMP-NTf2", "Bd+ITCZ", "BMP-NTf2", "Control", "ITCZ"))
+
+#
+ann_text <- data.frame(Weight_g = rep(1, times = 6),
+                       Exp_Day  = rep(5, times = 6),
+                       ID_Number = rep(1, times = 6),
+                       lab = c(1, 1, 2, 3, 3, 3),
+                       Treatment = factor(c("Bd", "Bd+BMP-NTf2", "Bd+ITCZ", "BMP-NTf2", "Control", "ITCZ"), 
+                                          levels = c("Bd", "Bd+BMP-NTf2", "Bd+ITCZ", "BMP-NTf2", "Control", "ITCZ")))
+
+# Make plot
+ggplot(data = mat, aes(y = Weight_g, x = Exp_Day, col = as.factor(ID_Number))) + 
+  geom_point()+
+  geom_line()+
+    geom_smooth(data = mat, aes(x = Exp_Day, y  = Weight_g, col = Treatment), method = "lm", col = "black")+
+  facet_wrap(~Treatment)+
+    theme_bw()+
+  ylab("Mass (g)")+
+  xlab("Experimental day")+
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        axis.text.y=element_text(size=12),
+        axis.title.y=element_text(size=12),
+        axis.text.x=element_text(size=12),
+        legend.position = "none",
+        axis.title.x=element_text(size=12),
+        strip.background = element_rect("white"))+
+  geom_text(data = ann_text, label = c(1, 1, 2, 3, 3, 3), col = "black")
+
+ggsave("Weight through time.pdf", height = 5, width = 7)
+
+```
+
+## (II) LMM: weight ~ log10(Bd load + 1)* treatment + experimental day + (1| ID number)
+
+```{r, eval = FALSE}
+# Here, we are determining the effect of pathogen load on weight
+growth <- read.csv("~/Dropbox/Active manuscripts/Needs Work/Behavior/Data/Arrival_day/Arrival_day_measurements.csv")
+
+# Look at data structure
+str(growth)
+# Same file as before with the growth information
+
+# Download treatment data
+treatments <- read.csv("~/Dropbox/Active manuscripts/Needs Work/Behavior/Data/Treatments/FINAL TREATMENTS/treatments_long_format.csv")
+# Same file as before with the treatment information
+
+# Convert ID number to factor
+treatments$ID_Number <- as.factor(treatments$ID_Number)
+
+# Merge the matrix with the treatments
+mat <- merge(growth, treatments, all = TRUE)
+
+# Look at new data frame structure
+str(mat)
+
+# Remove any treatments with "Pre-" name
+mat <- mat[-c(grep("Pre-", mat$Treatment)),]
+
+# Drop any levels not used in the data frame
+mat <- droplevels(mat)
+
+# Convert ID number to factor
+mat$ID_Number <- as.factor(mat$ID_Number)
+
+# Read in the infection data
+Bd <- read.csv("~/Dropbox/Active manuscripts/Needs Work/Behavior/Data/Pathogen_load/Bd-DT2.csv")
+
+# Look at the data structure
+str(Bd)
+#'data.frame':	439 obs. of  6 variables:
+# $ Bd  = zoospore genomic equivalents detected on the swabs
+# $ day  = day sample collected
+# $ Month  = month sampled collected
+# $ year   = year sample collected
+# $ Exp_Day = experimental day sample collected
+# $ ID_Number = individual ID
+
+# Remove any rows without Bd infection information
+Bd <- Bd[is.na(Bd$Bd) == FALSE,]
+
+# Rename the second column to "Day"
+colnames(Bd)[2] <- "Day"
+
+# Rename the fourth column to "Year"
+colnames(Bd)[4] <- "Year"
+
+# Convert ID number to factor
+Bd$ID_Number <- as.factor(Bd$ID_Number)
+
+# Merge the two dataframes together along all columns that match between them
+dat9 <- merge(x = Bd, y = mat, by = c("Day", "Month", "Year", "ID_Number"))
+
+# Remove any rows without Bd information
+dat9 <- dat9[is.na(dat9$Bd) == FALSE,]
+
+# Look at data structure
+str(dat9)
+
+# Drop any levels not used
+dat9 <- droplevels(dat9)
+
+# Remove rows without treatment information
+mat2 <- dat9[is.na(dat9$Treatment) == FALSE,]
+
+# Drop unused levels
+mat2 <- droplevels(mat2)
+
+# Plot data
+ggplot(data = mat2, aes(y = Weight_g, x = log10(Bd+1), col = Treatment))+ 
+  geom_jitter(height = 0.01, width = 0.01) + 
+  scale_color_manual(values = c("black", "deepskyblue3", "goldenrod3"))+
+  ylab("Mass (g)") + 
+  xlab(expression(paste(log[10], "(", italic(Bd), " load + 1)")))+ 
+  theme_bw()+
+  theme(
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), 
+    axis.text.y=element_text(size=14),
+    axis.title.y=element_text(size=14),
+    axis.text.x=element_text(size=14),
+    axis.title.x=element_text(size=14))+
+  stat_smooth(method = "lm", size =1.5)
+
+ggsave("Weight v Bd load.pdf", height = 5, width = 7)
+
+# Make a new column with Bd load log transformed
+mat2$log10Bd <- log10(mat2$Bd+1)
+  
+# load libraries
+library(lme4)
+library(nlme)
+library("emmeans")
+
+# Used generalized linear mixed effect model with log10(Bd+1) load as the response variable and 
+mod <- lme(Weight_g ~  log10Bd * (Treatment-1) + Exp_Day.y, random = ~1|ID_Number, data = mat2)
+
+summary(mod)
+
+# Interaction plot
+emmip(mod, Treatment ~ log10Bd, cov.reduce = range,
+      xlab = "log10(Bd load + 1)", ylab = "Weight (g)") +
+  scale_x_discrete(labels = c(0, 6))
+
+ggsave("Weight Bd load interaction plot.pdf", height = 5, width = 7)
+  
+
+#---- Look at pairwise differences in slope estimates among treatments
+lst <- emtrends(mod, ~ Treatment, var = "log10Bd")
+multcomp::cld(lst)
+
+
+# Compare the intercept for total jumping distance between treatments
+post_hoc <- emmeans(mod, "Treatment")
+
+# Calculate p-values for each pair
+pairs(post_hoc)
+# Intercept not significantly different between pairs of treatments
+
+
+```
+
+# Appendix S3. Evaluating host behavior: 
+
+```{r, eval = FALSE}
+# library
+require(foreign)
+require(nnet)
+require(ggplot2)
+require(reshape2)
+library("car")
+
+# Load and format the data
+
+# Read data
+dat <- read.csv("~/Dropbox/Active manuscripts/Needs Work/Behavior/Data/Habitat/habitatworksheet.csv")
+
+# Look at data
+
+str(dat)
+#'data.frame':	2906 obs. of  10 variables:
+# $ Day = day of observation 
+# $ Month = month of observation
+# $ Year  = year of observation
+# $ Frog  = Frog Id number
+# $ Habitat.Notes = Frog habitat use
+# $ Posture  = Frog posture
+# $ Movement   = notes on movement/activity
+# $ Time.Habitat = time of habtiat observation 
+# $ Time.Posture = time of posture observation
+# $ Notes   = other notes
+
+# Look at the levels in habitat notes
+unique(dat$Habitat.Notes)
+
+# Calculate the number of times each observation occurred
+table(dat$Habitat.Notes)
+
+# There are clearly some levels that need to be grouped together
+# Here we will use regular expressions to fix spelling mistakes
+
+dat$Habitat.Notes <- gsub("against side  ", "ON_TOP_OR_ON_WALL", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("CROUCHED_BEHIND_HIDE ", "CROUCHED_BEHIND_HIDE", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("CROUCHED_BEHIND_HIDE, halfway up on hide (torso)", "CROUCHED_BEHIND_HIDE", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("CROUCHED_BEHIND_HIDE, halfway up ON_TOP_OR_ON_WALL(torso)", "CROUCHED_BEHIND_HIDE", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("CROUCHED_BEHIND_HIDE, halfway up on hide (torso)", "CROUCHED_BEHIND_HIDE", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("CROUCHED_BEHIND_HIDE)", "CROUCHED_BEHIND_HIDE", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("in INSIDE_HIDE", "INSIDE_HIDE", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("INSIDE_HIDE ", "INSIDE_HIDE", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("leaning halway up on hide", "INSIDE_HIDE", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("on ON_TOP_OR_ON_WALL", "ON_TOP_OR_ON_WALL", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("ON_SUBSTRATE ", "ON_SUBSTRATE", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("ON_SUBSTRATE of cage ", "ON_SUBSTRATE", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("ON_SUBSTRATEof cage ", "ON_SUBSTRATE", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("ON_SUBSTRATEON_SUBSTRATE", "ON_SUBSTRATE", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("ON_SUBSTRATEupright", "ON_SUBSTRATE", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("ON_SUBSTRATE upright", "ON_SUBSTRATE", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("ON_TOP_OR_ON_WALL ", "ON_TOP_OR_ON_WALL", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("ON_TOP_OR_ON_WALL  ", "ON_TOP_OR_ON_WALL", dat$Habitat.Notes)
+
+dat$Habitat.Notes <- gsub("side  ", "ON_TOP_OR_ON_WALL", dat$Habitat.Notes)
+
+table(dat$Habitat.Notes)
+
+# Remove levels with 1 observation
+dat <- dat[dat$Habitat.Notes != "mid tank ",]
+
+# remove rows without any observations
+dat <- dat[is.na(dat$Habitat.Notes) == FALSE,]
+
+# Check the structure of the data
+str(dat)
+
+# Convert Habitat.Notes to a factor
+dat$Habitat.Notes <- as.factor(dat$Habitat.Notes)
+
+# Check the number of levels
+levels(dat$Habitat.Notes)
+
+# Replace the name of the 4th column 
+colnames(dat)[4] <- "ID_Number"
+
+# Download treatment data
+treatments <- read.csv("~/Dropbox/Active manuscripts/Needs Work/Behavior/Data/Treatments/FINAL TREATMENTS/treatments_long_format.csv")
+
+# Download data
+dates <- read.csv("~/Dropbox/Active manuscripts/Needs Work/Behavior/exp_dates.csv")
+
+# Paste the day, month, and year
+dates$dates <- paste(dates$Day, dates$Month, dates$Year, sep = "-")
+
+# Look at dates
+str(dates)
+
+# Merge the matrix with the treatments
+mat <- merge(dat, treatments, by = "ID_Number")
+
+# Paste the day, month, and year together
+mat$dates <- paste(mat$Day, mat$Month, mat$Year, sep = "-")
+
+# Merge mat and dates dataframes
+mat2 <- merge(mat, dates, all = TRUE)
+
+# Remove any "pre-" treatment animals
+mat2 <- mat2[-c(grep("Pre-", mat2$Treatment)),]
+
+# Drop any unused levels
+mat2 <- droplevels(mat2)
+
+# Remove individuals without a treatment
+mat2 <- mat2[is.na(mat2$Treatment) == FALSE,]
+
+# Look at the head of the data frame
+head(mat2)
+
+# Create a new column
+mat2$stage <- rep(0, times = nrow(mat2))
+
+# Specify during what stage of the experiment the observation occurred
+  # Experimental day < 20 = "before"
+  # Experimental day == 20 = "during"
+  # Experimental day > 20  & < 30 = "during"
+  # Experimental day == 30 = "during"
+  # Experimental day > 30  = "after"
+
+for(i in 1:nrow(mat2)){
+  if(mat2$Exp_Day[i] < 20){mat2$stage[i] <- "before"}
+  if(mat2$Exp_Day[i] == 20){mat2$stage[i] <- "during"}
+  if(mat2$Exp_Day[i] > 20 & mat2$Exp_Day[i] < 30) {mat2$stage[i] <- "during"}
+  if(mat2$Exp_Da[i] == 30){mat2$stage[i] <- "during"}
+  if(mat2$Exp_Day[i] > 30){mat2$stage[i] <- "after"}
+}  
+
+# Make this new stage column a factor
+mat2$stage <- as.factor(mat2$stage)
+
+# Look at the structure
+str(mat2)
+
+# Make a table of the number of observations by habitat choice and tratment
+with(mat2, table (Habitat.Notes, Treatment))
+
+# Fix the redundant level
+mat2$Habitat.Notes <- gsub("ON_TOP_OR_ON_WALL ", "ON_TOP_OR_ON_WALL", mat2$Habitat.Notes)
+
+# Change individual id numbers to a factor
+mat2$ID_Number <- as.factor(mat2$ID_Number)
+
+# Make a new column is Bd+ or Bd-
+mat2$Group <- NA
+
+# If Bd is in the treatment- then make the Group column = "Bd+"
+mat2[grep("Bd", mat2$Treatment),]$Group <- "Bd+"
+
+# If Bd is not in the treatment- then make the Group column = "Bd-"
+mat2$Group <- ifelse(is.na(mat2$Group) == TRUE, "Bd-", mat2$Group)
+
+# Make Group a factor 
+mat2$Group <- as.factor(mat2$Group)
+
+# Look at mat2 structure
+str(mat2)
+
+# Not used in manuscript but tested
+test <- multinom(Habitat.Notes ~ Exp_Day * Group + ID_Number , data = mat2)
+
+# Calculates type-II or type-III analysis-of-variance tables for multinomial model 
+  # for multinomial logit and proportional-odds logit models, likelihood-ratio tests are calculated.
+Anova(test, type = "III")
+Anova(test, type = "II")
+
+# Use a multinomial logit model to test the change in habitat use by treatment
+test <- multinom(Habitat.Notes ~ Exp_Day * Treatment + ID_Number , data = mat2)
+
+# Look at output- Appendix S3 A
+summary(test)
+
+# Calculates type-II or type-III analysis-of-variance tables for multinomial model 
+  # for multinomial logit and proportional-odds logit models, likelihood-ratio tests are calculated.
+Anova(test, type = "III")
+Anova(test, type = "II")
+
+# Make a plot to visualize the relationships
+
+# Create a new data frame with covariates to 
+dses <- data.frame(Treatment = rep(levels(mat2$Treatment), 
+                                   times = length(unique(mat2$Exp_Day)) * 3),
+                  Exp_Day = rep(unique(mat2$Exp_Day), 
+                                each = length(levels(mat2$Treatment)) * 3),
+                  ID_Number = rep(1, 
+                                  each = length(levels(mat2$Treatment)) *length(unique(mat2$Exp_Day)) *3),
+                  stage = rep(c("before", "during", "after"), 
+                              each = length(levels(mat2$Treatment)) *
+                                length(unique(mat2$Exp_Day))))
+
+# Make the stage a factor
+dses$stage <- as.factor(dses$stage)
+
+# Make Id number a factor
+dses$ID_Number <- as.factor(dses$ID_Number)
+
+## store the predicted probabilities for each value of ses and write
+pp.write <- cbind(dses, predict(test, dses, type = "probs"))
+
+## melt data set to long form for plotting using ggplot2
+lpp <- melt(pp.write, id.vars = c("Treatment", "stage", "ID_Number", "Exp_Day"), value.name = "probability")
+head(lpp)
+
+# Replace the names with other words
+lpp$variable <- gsub("ON_SUBSTRATE", "On substrate", lpp$variable)
+
+lpp$variable <- gsub("CROUCHED_BEHIND_HIDE", "Behind hide", lpp$variable)
+
+lpp$variable <- gsub("INSIDE_HIDE", "Inside hide", lpp$variable)
+
+lpp$variable <- gsub("ON_TOP_OR_ON_WALL", "On top or on wall", lpp$variable)
+
+###--- Take average across individuals
+library(plyr)
+
+Summ <- ddply(.data = lpp, .variable = c("Treatment", "Exp_Day", "variable"), .fun = summarize,
+      probability = mean(probability))
+
+#--- Make a plot
+cbbPalette <- c("#000000", "#009E73", "#e79f00", "#9ad0f3", "#0072B2", "#D55E00", "#CC79A7", "#F0E442", "#56B4E9")
+
+# Create data frames for adding text to plot
+# Before
+ann_text1 <- data.frame(Exp_Day = rep(15, times = 4),
+                       probability = rep(0.6, times = 4),
+                       variable = c("Behind hide", 
+                                     "Inside hide", 
+                                     "On top or on wall", 
+                                     "On substrate"),
+                       Treatment = "Bd")
+
+# During
+ann_text2 <- data.frame(Exp_Day = rep(25, times = 4),
+                       probability = rep(0.6, times = 4),
+                       variable = c("Behind hide", 
+                                     "Inside hide", 
+                                     "On top or on wall", 
+                                     "On substrate"),
+                       Treatment = "Bd")
+
+# After
+ann_text3 <- data.frame(Exp_Day = rep(32, times = 4),
+                       probability = rep(0.6, times = 4),
+                       variable = c("Behind hide", 
+                                     "Inside hide", 
+                                     "On top or on wall", 
+                                     "On substrate"),
+                       Treatment = "Bd")
+
+ggplot(Summ, aes(x = Exp_Day, y = probability, colour = Treatment)) + geom_line(size = 1.2) + facet_grid(variable ~., scales = "free")+ 
+  scale_color_manual(values = cbbPalette)+
+  ylab("Probability of habitat use") + xlab("Experimental Day") +
+  geom_vline(xintercept = 20, col = "red", lty = 2)+
+  geom_vline(xintercept = 30, col = "red", lty = 2)+
+  theme_bw()+
+  theme(
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), 
+    strip.background = element_rect("white"),
+    axis.text.y=element_text(size=14),
+    axis.title.y=element_text(size=14),
+    axis.text.x=element_text(size=14),
+    axis.title.x=element_text(size=14))+ 
+  geom_text(data = ann_text1, show.legend = FALSE, label = c("Before", "", "", ""))+
+  geom_text(data = ann_text2, show.legend = FALSE, label = c("During", "", "", ""))+
+  geom_text(data = ann_text3, show.legend = FALSE, label = c("After", "", "", ""))
+  
+ggsave("Habitat choice v time.pdf", height = 8, width = 7)
+
+```
+
