@@ -215,19 +215,57 @@ str(dat)
 # Make a new column with Bd load log transformed
 dat$log10Bd <- log10(dat$Bd+1)
 
+# load libraries
+library(lme4)
+library(nlme)
+library("emmeans")
+
+# Used generalized linear mixed effect model with log10(Bd+1) load as the response variable and 
+mod <- lme(Total ~  log10Bd * Treatment + Exp_Day, random = ~1|ID_Number, data = dat)
+
+# Look at summary
+summary(mod)
+  # log10Bd is not significant
+  # Next, we will test to see if the slopes for each treatment are different
+  # And we will test to see if the intercepts are different among treatments
+
+
+#Create a new data frame
+dat2 <- expand.grid(Exp_Day = 30, #unique(dat2$Exp_Day.y),
+                    Treatment = levels(dat$Treatment),
+                    log10Bd = seq(from = 0, to = 6, by= 1),
+                    ID_Number = 1 #unique(dat2$ID_Number)
+                    )
+
+# Call library
+library(AICcmodavg)
+# mean model fit
+dat2$pred_mean <- predictSE(mod = mod, newdata= dat2, type = "response", backTransform = TRUE)$fit
+# Upper
+dat2$pred_upper <- predictSE(mod = mod, newdata= dat2, type = "response", backTransform = TRUE)$fit +
+                   predictSE(mod = mod, newdata= dat2, type = "response", backTransform = TRUE)$se.fit
+# Lower
+dat2$pred_lower <- predictSE(mod = mod, newdata= dat2, type = "response", backTransform = TRUE)$fit -
+                   predictSE(mod = mod, newdata= dat2, type = "response", backTransform = TRUE)$se.fit
+
+dat2$ID_Number <- as.factor(dat2$ID_Number)
+
 # Load the library
 library(ggplot2)
-
-# Create a color ramp
-cbbPalette <- c("black", "deepskyblue3", "goldenrod3")
 
 # Make a plot
   # Total jumping distance = y-axis
   # log10 Bd load = x-axis
   # Treatments = colors
 ggplot(data = dat, aes(y = Total, x = log10Bd, col = Treatment))+ 
-  geom_jitter(height = 1, width = 1) + 
-  scale_color_manual(values = cbbPalette)+
+  geom_jitter(height = 0.01, width = 0.1) + 
+ geom_ribbon(data = dat2, aes(x = log10Bd,
+                              y = pred_mean,
+                              ymin= pred_lower, 
+                              ymax = pred_upper, fill = Treatment), alpha = 0.3, colour = NA)+
+  geom_line(data = dat2, aes(x = log10Bd, y = pred_mean, col = Treatment), size = 1.5)+
+  scale_color_manual(values = c("black", "deepskyblue3", "goldenrod3"))+
+  scale_fill_manual(values = c("black", "deepskyblue3", "goldenrod3"))+
   ylab("Total jumping distance (mm)") + 
   xlab(expression(paste(log[10], "(", italic(Bd), " load + 1)")))+ 
   theme_bw()+
@@ -237,24 +275,10 @@ ggplot(data = dat, aes(y = Total, x = log10Bd, col = Treatment))+
     axis.text.y=element_text(size=14),
     axis.title.y=element_text(size=14),
     axis.text.x=element_text(size=14),
-    axis.title.x=element_text(size=14))+
-  stat_smooth(method = "lm", se = TRUE, size =1.5)
+    axis.title.x=element_text(size=14))
   
 ggsave("Jumping distance v Bd load.pdf", height = 5, width = 7)
 
-# load libraries
-library(lme4)
-library(nlme)
-library("emmeans")
-
-# Used generalized linear mixed effect model with log10(Bd+1) load as the response variable and 
-mod <- lme(Total ~  log10Bd * (Treatment-1) + Exp_Day, random = ~1|ID_Number, data = dat)
-
-# Look at summary
-summary(mod)
-  # log10Bd is not significant
-  # Next, we will test to see if the slopes for each treatment are different
-  # And we will test to see if the intercepts are different among treatments
 
 # Interaction plot
 emmip(mod, Treatment ~ log10Bd, cov.reduce = range,
@@ -329,6 +353,7 @@ mat <- droplevels(mat)
 mat$ID_Number <- as.factor(mat$ID_Number)
 
 ## Analyze the frog's weight (response variable) with experimental day * treatment interaction as fixed effects and individual ID as the random effect
+library(lme4)
 mod <- lmer(Weight_g ~ Treatment*Exp_Day + (1|ID_Number), data = mat)
 
 # Look at summary of the model
@@ -401,7 +426,7 @@ ggsave("Weight through time.pdf", height = 5, width = 7)
 
 ## (II) LMM: weight ~ log10(Bd load + 1)* treatment + experimental day + (1| ID number)
 
-```{r, eval = FALSE}
+```{r}
 # Here, we are determining the effect of pathogen load on weight
 growth <- read.csv("~/Dropbox/Active manuscripts/Needs Work/Behavior/Data/Arrival_day/Arrival_day_measurements.csv")
 
@@ -474,24 +499,6 @@ mat2 <- dat9[is.na(dat9$Treatment) == FALSE,]
 # Drop unused levels
 mat2 <- droplevels(mat2)
 
-# Plot data
-ggplot(data = mat2, aes(y = Weight_g, x = log10(Bd+1), col = Treatment))+ 
-  geom_jitter(height = 0.01, width = 0.01) + 
-  scale_color_manual(values = c("black", "deepskyblue3", "goldenrod3"))+
-  ylab("Mass (g)") + 
-  xlab(expression(paste(log[10], "(", italic(Bd), " load + 1)")))+ 
-  theme_bw()+
-  theme(
-    panel.grid.major = element_blank(), 
-    panel.grid.minor = element_blank(), 
-    axis.text.y=element_text(size=14),
-    axis.title.y=element_text(size=14),
-    axis.text.x=element_text(size=14),
-    axis.title.x=element_text(size=14))+
-  stat_smooth(method = "lm", size =1.5)
-
-ggsave("Weight v Bd load.pdf", height = 5, width = 7)
-
 # Make a new column with Bd load log transformed
 mat2$log10Bd <- log10(mat2$Bd+1)
   
@@ -501,9 +508,52 @@ library(nlme)
 library("emmeans")
 
 # Used generalized linear mixed effect model with log10(Bd+1) load as the response variable and 
-mod <- lme(Weight_g ~  log10Bd * (Treatment-1) + Exp_Day.y, random = ~1|ID_Number, data = mat2)
+mod <- lme(Weight_g ~  log10Bd * Treatment + Exp_Day.y, random = ~1|ID_Number, data = mat2)
 
 summary(mod)
+
+#Create a new data frame
+mat3 <- expand.grid(Exp_Day.y = 30, #unique(mat2$Exp_Day.y),
+                    Treatment = levels(mat2$Treatment),
+                    log10Bd = seq(from = 0, to = 6, by= 1),
+                    ID_Number = 1 #unique(mat2$ID_Number)
+                    )
+
+# Call library
+library(AICcmodavg)
+# mean model fit
+mat3$pred_mean <- predictSE(mod = mod, newdata= mat3, type = "response", backTransform = TRUE)$fit
+# Upper
+mat3$pred_upper <- predictSE(mod = mod, newdata= mat3, type = "response", backTransform = TRUE)$fit +
+                   predictSE(mod = mod, newdata= mat3, type = "response", backTransform = TRUE)$se.fit
+# Lower
+mat3$pred_lower <- predictSE(mod = mod, newdata= mat3, type = "response", backTransform = TRUE)$fit -
+                   predictSE(mod = mod, newdata= mat3, type = "response", backTransform = TRUE)$se.fit
+
+mat3$ID_Number <- as.factor(mat3$ID_Number)
+
+# Plot data
+ggplot(data = mat2, aes(y = Weight_g, x = log10Bd, col = Treatment))+ 
+  geom_jitter(height = 0.01, width = 0.1) + 
+ geom_ribbon(data = mat3, aes(x = log10Bd,
+                              y = pred_mean,
+                              ymin= pred_lower, 
+                              ymax = pred_upper, fill = Treatment), alpha = 0.3, colour = NA)+
+  geom_line(data = mat3, aes(x = log10Bd, y = pred_mean, col = Treatment), size = 1.5)+
+  scale_color_manual(values = c("black", "deepskyblue3", "goldenrod3"))+
+  scale_fill_manual(values = c("black", "deepskyblue3", "goldenrod3"))+
+  ylab("Weight (g)") + 
+  xlab(expression(paste(log[10], "(", italic(Bd), " load + 1)")))+ 
+  theme_bw()+
+  theme(
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(), 
+    axis.text.y=element_text(size=14),
+    axis.title.y=element_text(size=14),
+    axis.text.x=element_text(size=14),
+    axis.title.x=element_text(size=14))
+
+ggsave("Weight v Bd load.pdf", height = 5, width = 7)
 
 # Interaction plot
 emmip(mod, Treatment ~ log10Bd, cov.reduce = range,
@@ -530,7 +580,7 @@ pairs(post_hoc)
 
 # Appendix S3. Evaluating host behavior: 
 
-```{r, eval = FALSE}
+```{r}
 # library
 require(foreign)
 require(nnet)
